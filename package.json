@@ -1,0 +1,33 @@
+{
+  "name": "pi-extension-iwe-claude-native",
+  "version": "0.1.0-iwe.0",
+  "description": "Pi-extension providing Claude-native parity for IWE: command aliases (/day-open → /skill:day-open) and (Ф3+) custom Skill/Task/TodoWrite tools.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/VxxxlBxxxxv/DS-pi-claude-native-extension.git"
+  },
+  "type": "module",
+  "keywords": [
+    "pi-package",
+    "iwe",
+    "claude-native"
+  ],
+  "files": [
+    "index.ts",
+    "README.md"
+  ],
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "peerDependenciesMeta": {
+    "@earendil-works/pi-coding-agent": {
+      "optional": true
+    }
+  }
+}
