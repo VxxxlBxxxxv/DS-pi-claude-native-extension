@@ -28,7 +28,7 @@ Tool names fall back to `iwe_skill` / `iwe_task` / `iwe_todo_write` if Pi ships 
 
 - Does not modify `.claude/` or FMT (separation principle: adapter lives in this repo only).
 - Does not bridge hooks — that's `DS-pi-claude-hooks-bridge` (separate WP-38).
-- Does not implement MCP — that's WP-48 (`pi-mcp-adapter` config conversion).
+- ~~MCP config conversion~~ — WP-48 confirmed: Pi reads `.mcp.json` natively via `pi-mcp-adapter`. No converter needed.
 - Does not provide `WebFetch`/`ScheduleWakeup`/`ExitPlanMode` — out of Pi-scope (external cron, Pi-skills, or not covered).
 
 ## Install (development, local)
@@ -90,6 +90,35 @@ If smoke fails — check `pi --version` (requires ~0.74+) and `~/.pi/agent/setti
 | L3 — Hooks bridge | `.claude/settings.json` → Pi events | `DS-pi-claude-hooks-bridge` |
 
 See `~/IWE/DS-strategy/inbox/research-pi-iwe-modules-data.md` for full Pi-IWE compatibility matrix.
+
+## MCP in Pi (WP-48, completed)
+
+Pi accesses IWE knowledge MCP (`iwe-knowledge`) out of the box — no manual config needed.
+
+**How it works:**
+
+1. `pi-mcp-adapter` (already in `settings.json → packages[]`) reads `~/IWE/.mcp.json` at startup
+2. Discovers `iwe-knowledge` server (`https://mcp.aisystant.com/mcp`)
+3. OAuth tokens stored at `~/.pi/agent/mcp-oauth/iwe-knowledge/tokens.json`
+4. Tools available in Pi: `search`, `knowledge_concept_expand`, `knowledge_concept_search_by_name`, etc. (34 total)
+
+**First-time OAuth setup (one-time):**
+
+If tokens are missing or expired, Pi will prompt for OAuth. Alternatively, refresh manually:
+
+```bash
+# Refresh via MCP token endpoint (if refresh token is valid)
+curl -s -X POST https://mcp.aisystant.com/token \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "grant_type=refresh_token&refresh_token=$(jq -r '.tokens.refreshToken' ~/.pi/agent/mcp-oauth/iwe-knowledge/tokens.json)&client_id=gateway-mcp"
+```
+
+**Verified (2026-05-23):**
+
+- Token refresh works via `https://mcp.aisystant.com/token`
+- Search «WP Gate» returns relevant results
+- `settings.json` has no conflict between WP-47 blocks and MCP config
+- 34 tools cached in `mcp-cache.json`
 
 ## Upstream tracking
 

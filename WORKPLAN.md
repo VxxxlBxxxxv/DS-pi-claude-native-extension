@@ -7,6 +7,7 @@
 | # | Название | Статус | Фаза | Артефакт |
 |---|----------|--------|------|----------|
 | WP-47 | Pi-адаптер iwe-claude-native — Skill/Task/TodoWrite + 10 aliases | 🔄 in_progress | Ф2 scaffold (22.05 Пт), Ф3-Ф5 carry W22 | этот репо + symlink `~/.pi/agent/extensions/iwe-claude-native` |
+| WP-48 | MCP iwe-knowledge: Pi-adapter | ✅ done 23.05 | Все фазы | OAuth tokens refresh + README секция |
 
 ## Фазы WP-47
 
