@@ -2,17 +2,27 @@
 
 Pi-extension providing Claude-native parity for the IWE (Intellectual Work Environment) running on Pi (`@earendil-works/pi-coding-agent`).
 
-> **Status:** Ф2 scaffold (22.05.2026). Command aliases work. Custom tools (`Skill`, `Task`, `TodoWrite`) planned for Ф3-Ф5.
+> **Status:** Ф2-Ф4 done (23.05.2026). Command aliases + `Skill` / `Task` / `TodoWrite` tools active. Ф5 complete (GitHub remote + DS-strategy sync).
 
 ## What it does
 
-Pilots used to Claude Code expect `/day-open`, `/verify`, `/archgate` etc. without prefix. In Pi the native command form is `/skill:day-open`. This extension registers 10 IWE skill aliases as direct Pi commands, calling `pi.sendUserMessage("/skill:<name>")` under the hood.
+Pilots used to Claude Code expect `/day-open`, `/verify`, `/archgate` etc. without prefix. In Pi the native command form is `/skill:day-open`. This extension registers 10 IWE skill aliases as direct Pi commands, and provides `Skill`, `Task`, `TodoWrite` as model-callable tools.
 
-**Аliases registered (10):**
+**Aliases registered (10):**
 
 `day-open`, `day-close`, `week-close`, `month-close`, `run-protocol`, `verify`, `archgate`, `ke`, `wp-new`, `think`.
 
-(Other IWE skills like `apply-captures`, `audit-installation`, `extend`, `fpf`, `iwe-bug-report`, `iwe-rules-review`, `iwe-update`, `pack-new`, `personal-guide-render`, `personal-guide-start`, `setup-wakatime`, `strategy-session` remain accessible via `/skill:<name>` — they are less frequent in daily flow.)
+(Other IWE skills remain accessible via `/skill:<name>` — less frequent in daily flow.)
+
+**Custom tools (Ф3-Ф4):**
+
+| Tool | What it does |
+|------|-------------|
+| `Skill(name, args?)` | Invokes an IWE skill as a follow-up user message |
+| `Task(prompt, cwd?)` | Runs a headless Pi subagent (`pi --print --no-session`) for isolated work |
+| `TodoWrite(todos[])` | Updates task list widget above editor + persists via appendEntry |
+
+Tool names fall back to `iwe_skill` / `iwe_task` / `iwe_todo_write` if Pi ships native tools with the same names (collision detection via `getAllTools()` at startup).
 
 ## What it does NOT do
 
