@@ -40,7 +40,7 @@ const IWE_SKILL_ALIASES = [
 type SkillAlias = (typeof IWE_SKILL_ALIASES)[number];
 
 function makeSkillForwarder(pi: ExtensionAPI, alias: SkillAlias) {
-	return async (args: string | undefined) => {
+	return async (args: string) => {
 		const trimmed = args?.trim();
 		const cmd = trimmed ? `/skill:${alias} ${trimmed}` : `/skill:${alias}`;
 		await pi.sendUserMessage(cmd);
@@ -155,25 +155,21 @@ async function runPiHeadless(
 // ============================================================
 
 export default function iweClaudeNative(pi: ExtensionAPI): void {
+	// Action methods (getAllTools, registerTool, registerCommand) cannot be called
+	// during extension loading in Pi ≥0.76 — the runtime is not yet initialized.
+	// All registration is deferred to session_start (fires on startup + reload).
+	pi.on("session_start", (event, _ctx) => {
+		if (event.reason !== "startup" && event.reason !== "reload") return;
+
 	// --- Ф2: command aliases ---
 	for (const alias of IWE_SKILL_ALIASES) {
-		(
-			pi as unknown as {
-				registerCommand: (
-					name: string,
-					spec: {
-						description: string;
-						handler: (args: string | undefined) => Promise<void>;
-					},
-				) => void;
-			}
-		).registerCommand(alias, {
+		pi.registerCommand(alias, {
 			description: `IWE Claude-native alias for /skill:${alias}`,
 			handler: makeSkillForwarder(pi, alias),
 		});
 	}
 
-	// --- Ф3-Ф4: collision detection (smoke #8) ---
+	// --- Ф3-Ф4: collision detection (safe here: runtime is initialized) ---
 	const existingNames = new Set(pi.getAllTools().map((t) => t.name));
 	const skillName = existingNames.has("Skill") ? "iwe_skill" : "Skill";
 	const taskName = existingNames.has("Task") ? "iwe_task" : "Task";
@@ -254,4 +250,5 @@ export default function iweClaudeNative(pi: ExtensionAPI): void {
 			};
 		},
 	});
+	}); // end session_start
 }
