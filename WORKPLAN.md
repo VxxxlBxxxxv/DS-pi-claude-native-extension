@@ -4,13 +4,16 @@
 
 ## Активные РП
 
-> Нет активных РП. WP-47 и WP-48 закрыты в W21.
+| # | Название | Статус | Артефакт |
+|---|----------|--------|----------|
+| WP-64 | Проверка записи трассировки действий в Pi | ⏳ waiting for WP-58 Phase B | Recorder full-chain smoke после security fix / FMT update |
 
 ## Завершённые РП
 
 | # | Название | Статус | Закрыто | Артефакт |
 |---|----------|--------|---------|----------|
 | ~~WP-47~~ | ~~Pi-адаптер iwe-claude-native — Skill/Task/TodoWrite + 10 aliases~~ | ✅ done | 23.05 (W21, Ф0-Ф5 all done, ~3.5h) | этот репо + symlink `~/.pi/agent/extensions/iwe-claude-native` |
+| ~~WP-59~~ | ~~Проверка напоминаний о сбоях в Pi~~ | ✅ done | 28.05 (split: recorder full-chain → WP-64) | Discovery Q1/Q2/Q4 + reminder PASS; cwd-only settings gap filed |
 | ~~WP-48~~ | ~~MCP iwe-knowledge: Pi-adapter~~ | ✅ done | 23.05 (0.3h, 8× экономия — Pi читает .mcp.json нативно) | OAuth tokens refresh + README секция |
 
 ## Фазы WP-47 (все завершены)
