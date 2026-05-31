@@ -2,7 +2,7 @@
 
 Pi-extension providing Claude-native parity for the IWE (Intellectual Work Environment) running on Pi (`@earendil-works/pi-coding-agent`).
 
-> **Status:** Ф2-Ф4 done (23.05.2026). Command aliases + `Skill` / `Task` / `TodoWrite` tools active. Ф5 complete (GitHub remote + DS-strategy sync).
+> **Status:** Ф2-Ф4 done (23.05.2026). Command aliases + `Skill` / `Task` / `TodoWrite` tools active. Ф5 complete (GitHub remote + DS-strategy sync). Regression fix (31.05.2026): central `/skill:*` expansion guard for extension-injected messages.
 
 ## What it does
 
@@ -23,6 +23,8 @@ Pilots used to Claude Code expect `/day-open`, `/verify`, `/archgate` etc. witho
 | `TodoWrite(todos[])` | Updates task list widget above editor + persists via appendEntry |
 
 Tool names fall back to `iwe_skill` / `iwe_task` / `iwe_todo_write` if Pi ships native tools with the same names (collision detection via `getAllTools()` at startup).
+
+**Skill expansion guard:** Pi-native `/skill:<name>` commands are normally expanded before the model sees them. Extension-injected messages sent via `pi.sendUserMessage()` intentionally skip that expansion, so this extension centrally normalizes any `/skill:*` input by resolving the registered skill command dynamically (`pi.getCommands()`), reading its `SKILL.md`, and replacing the prompt with the expanded `<skill ...>` block. This covers current and future skills without maintaining a manual skill list.
 
 ## What it does NOT do
 
@@ -77,6 +79,10 @@ pi
 # In TUI:
 /day-open
 # Expected: skill executes (creates DayPlan, session log)
+
+# Regression smoke: raw skill command must expand once, not loop through Skill tool
+/skill:verify test
+# Expected: model receives verify SKILL.md instructions; no repeated "Queued: /skill:verify test"
 ```
 
 If smoke fails — check `pi --version` (requires ~0.74+) and `~/.pi/agent/settings.json.skills` is populated.

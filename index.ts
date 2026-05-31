@@ -11,6 +11,8 @@
  * @see ~/IWE/DS-strategy/inbox/WP-47-pi-claude-native-extension.md
  */
 import { spawn } from "node:child_process";
+import { readFileSync } from "node:fs";
+import { dirname } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
@@ -45,6 +47,43 @@ function makeSkillForwarder(pi: ExtensionAPI, alias: SkillAlias) {
 		const cmd = trimmed ? `/skill:${alias} ${trimmed}` : `/skill:${alias}`;
 		await pi.sendUserMessage(cmd);
 	};
+}
+
+function stripFrontmatter(content: string): string {
+	return content.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, "");
+}
+
+function escapeXmlAttr(value: string): string {
+	return value
+		.replace(/&/g, "&amp;")
+		.replace(/"/g, "&quot;")
+		.replace(/</g, "&lt;")
+		.replace(/>/g, "&gt;");
+}
+
+function expandSkillCommand(pi: ExtensionAPI, text: string): string | null {
+	const match = text.trimStart().match(/^\/skill:([a-z0-9-]+)(?:\s+([\s\S]*))?$/);
+	if (!match) return null;
+
+	const [, skillName, rawArgs] = match;
+	const commandName = `skill:${skillName}`;
+	const command = pi
+		.getCommands()
+		.find((cmd) => cmd.source === "skill" && (cmd.name === commandName || cmd.name === skillName));
+	if (!command) return null;
+
+	const skillPath = command.sourceInfo.path;
+	const skillDir = command.sourceInfo.baseDir ?? dirname(skillPath);
+
+	try {
+		const body = stripFrontmatter(readFileSync(skillPath, "utf-8")).trim();
+		const skillBlock = `<skill name="${escapeXmlAttr(skillName)}" location="${escapeXmlAttr(skillPath)}">\nReferences are relative to ${skillDir}.\n\n${body}\n</skill>`;
+		const args = rawArgs?.trim();
+		return args ? `${skillBlock}\n\n${args}` : skillBlock;
+	} catch (err) {
+		const message = err instanceof Error ? err.message : String(err);
+		return `[IWE skill expansion error: failed to read ${skillPath}: ${message}]`;
+	}
 }
 
 // ============================================================
@@ -155,6 +194,26 @@ async function runPiHeadless(
 // ============================================================
 
 export default function iweClaudeNative(pi: ExtensionAPI): void {
+	// Pi expands /skill:* only for native prompts. Extension-injected messages via
+	// sendUserMessage intentionally skip prompt/template expansion, so normalize
+	// /skill:* centrally before it reaches the model (prevents Skill tool loops).
+	pi.on("input", async (event) => {
+		if (!event.text.trimStart().startsWith("/skill:")) {
+			return { action: "continue" };
+		}
+
+		const expanded = expandSkillCommand(pi, event.text);
+		if (!expanded) {
+			return { action: "continue" };
+		}
+
+		return {
+			action: "transform",
+			text: expanded,
+			images: event.images,
+		};
+	});
+
 	// Action methods (getAllTools, registerTool, registerCommand) cannot be called
 	// during extension loading in Pi ≥0.76 — the runtime is not yet initialized.
 	// All registration is deferred to session_start (fires on startup + reload).
@@ -184,7 +243,8 @@ export default function iweClaudeNative(pi: ExtensionAPI): void {
 			"run-protocol, week-close, month-close). Sends the skill as a follow-up user message.",
 		promptSnippet: `${skillName}(name, args?) — invoke IWE skill`,
 		promptGuidelines: [
-			`Use ${skillName} instead of typing /skill:name manually.`,
+			`Use ${skillName} for natural-language requests that require an IWE skill.`,
+			`Do not call ${skillName} when the current user message already starts with /skill:.`,
 			"Set args for skill arguments (e.g. args='close day' for run-protocol).",
 		],
 		parameters: SkillParams,
