@@ -2,7 +2,7 @@
 
 Pi-extension providing Claude-native parity for the IWE (Intellectual Work Environment) running on Pi (`@earendil-works/pi-coding-agent`).
 
-> **Status:** Ф2-Ф4 done (23.05.2026). Command aliases + `Skill` / `Task` / `TodoWrite` tools active. Ф5 complete (GitHub remote + DS-strategy sync). Regression fix (31.05.2026): central `/skill:*` expansion guard for extension-injected messages.
+> **Status:** Ф2-Ф4 done (23.05.2026). Command aliases + `Skill` / `Task` / `TodoWrite` tools active. Ф5 complete (GitHub remote + DS-strategy sync). Regression fixes: central `/skill:*` expansion guard (31.05.2026); `Task` default fast verifier model + timeout diagnostics (02.06.2026).
 
 ## What it does
 
@@ -19,10 +19,12 @@ Pilots used to Claude Code expect `/day-open`, `/verify`, `/archgate` etc. witho
 | Tool | What it does |
 |------|-------------|
 | `Skill(name, args?)` | Invokes an IWE skill as a follow-up user message |
-| `Task(prompt, cwd?)` | Runs a headless Pi subagent (`pi --print --no-session`) for isolated work |
+| `Task(prompt, cwd?, model?, thinking?, timeoutSec?)` | Runs a headless Pi subagent (`pi --print --no-session`) for isolated work; defaults to `openai-codex/gpt-5.4-mini`, `minimal`, `55s` |
 | `TodoWrite(todos[])` | Updates task list widget above editor + persists via appendEntry |
 
 Tool names fall back to `iwe_skill` / `iwe_task` / `iwe_todo_write` if Pi ships native tools with the same names (collision detection via `getAllTools()` at startup).
+
+**Task default:** `Task` uses `openai-codex/gpt-5.4-mini` + `minimal` by default, with a 55-second internal timeout. This keeps formal checklist verification from hanging on the global heavy default (`gpt-5.5` + `xhigh`). Callers can override `model`, `thinking`, and `timeoutSec`.
 
 **Skill expansion guard:** Pi-native `/skill:<name>` commands are normally expanded before the model sees them. Extension-injected messages sent via `pi.sendUserMessage()` intentionally skip that expansion, so this extension centrally normalizes any `/skill:*` input by resolving the registered skill command dynamically (`pi.getCommands()`), reading its `SKILL.md`, and replacing the prompt with the expanded `<skill ...>` block. This covers current and future skills without maintaining a manual skill list.
 
@@ -83,6 +85,10 @@ pi
 # Regression smoke: raw skill command must expand once, not loop through Skill tool
 /skill:verify test
 # Expected: model receives verify SKILL.md instructions; no repeated "Queued: /skill:verify test"
+
+# Task smoke: headless subagent uses fast verifier default
+# Ask the model to call: Task({prompt: "Reply exactly CHILD_OK and do not use tools"})
+# Expected: CHILD_OK; details.model = openai-codex/gpt-5.4-mini; no opaque [pi subagent exit 1]
 ```
 
 If smoke fails — check `pi --version` (requires ~0.74+) and `~/.pi/agent/settings.json.skills` is populated.

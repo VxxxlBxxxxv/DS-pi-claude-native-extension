@@ -97,9 +97,16 @@ const SkillParams = Type.Object({
 	args: Type.Optional(Type.String({ description: "Optional arguments passed after the skill name" })),
 });
 
+const DEFAULT_TASK_MODEL = "openai-codex/gpt-5.4-mini";
+const DEFAULT_TASK_THINKING = "minimal";
+const DEFAULT_TASK_TIMEOUT_SEC = 55;
+
 const TaskParams = Type.Object({
 	prompt: Type.String({ description: "Prompt for the headless Pi subagent (pi --print)" }),
 	cwd: Type.Optional(Type.String({ description: "Working directory (defaults to current session cwd)" })),
+	model: Type.Optional(Type.String({ description: `Model for headless Pi (default: ${DEFAULT_TASK_MODEL})` })),
+	thinking: Type.Optional(Type.String({ description: `Thinking level (default: ${DEFAULT_TASK_THINKING})` })),
+	timeoutSec: Type.Optional(Type.Number({ description: `Timeout in seconds (default: ${DEFAULT_TASK_TIMEOUT_SEC})` })),
 });
 
 const TodoItem = Type.Object({
@@ -139,15 +146,71 @@ async function runPiHeadless(
 	prompt: string,
 	cwd: string,
 	signal: AbortSignal | undefined,
-): Promise<{ content: Array<{ type: "text"; text: string }>; details: { exitCode: number } }> {
+	options: { model?: string; thinking?: string; timeoutSec?: number } = {},
+): Promise<{
+	content: Array<{ type: "text"; text: string }>;
+	details: { exitCode: number; model: string; thinking: string; timeoutSec: number; timedOut: boolean; aborted: boolean };
+}> {
 	return new Promise((resolve) => {
-		const child = spawn("bash", ["-lc", 'pi --print --no-session "$IWE_TASK_PROMPT"'], {
+		const model = options.model?.trim() || DEFAULT_TASK_MODEL;
+		const thinking = options.thinking?.trim() || DEFAULT_TASK_THINKING;
+		const timeoutSec = Number.isFinite(options.timeoutSec) && (options.timeoutSec ?? 0) > 0
+			? Math.floor(options.timeoutSec as number)
+			: DEFAULT_TASK_TIMEOUT_SEC;
+		const args = ["--print", "--no-session", "--model", model, "--thinking", thinking, prompt];
+		const child = spawn("pi", args, {
 			cwd,
-			env: { ...process.env, IWE_TASK_PROMPT: prompt },
+			env: { ...process.env },
+			// Without closing stdin, nested `pi --print` waits for interactive input
+			// forever when launched through Node's default pipe stdin.
+			stdio: ["ignore", "pipe", "pipe"],
 		});
 
 		let stdout = "";
 		let stderr = "";
+		let settled = false;
+		let timedOut = false;
+		let aborted = false;
+		let timeout: NodeJS.Timeout | undefined;
+		let killTimer: NodeJS.Timeout | undefined;
+
+		const onAbort = () => {
+			aborted = true;
+			killChild();
+		};
+
+		const cleanup = () => {
+			if (timeout) clearTimeout(timeout);
+			if (killTimer) clearTimeout(killTimer);
+			if (signal) signal.removeEventListener("abort", onAbort);
+		};
+
+		const finalize = (exitCode: number, prefix?: string) => {
+			if (settled) return;
+			settled = true;
+			cleanup();
+
+			const out = stdout.trim();
+			const err = stderr.trim();
+			let text: string;
+			if (prefix) {
+				text = `${prefix}${err ? "\nSTDERR:\n" + err : ""}${out ? "\nSTDOUT:\n" + out : ""}`;
+			} else if (exitCode !== 0) {
+				text = `[pi subagent exit ${exitCode}]${err ? "\n" + err : ""}${out ? "\n" + out : ""}`;
+			} else {
+				text = out || `[pi subagent exit 0, no output]`;
+			}
+
+			resolve({
+				content: [{ type: "text", text }],
+				details: { exitCode, model, thinking, timeoutSec, timedOut, aborted },
+			});
+		};
+
+		function killChild() {
+			child.kill("SIGTERM");
+			killTimer = setTimeout(() => child.kill("SIGKILL"), 1000);
+		}
 
 		child.stdout.on("data", (d: Buffer) => {
 			stdout += d.toString();
@@ -157,34 +220,29 @@ async function runPiHeadless(
 		});
 
 		if (signal) {
-			const onAbort = () => child.kill("SIGTERM");
 			signal.addEventListener("abort", onAbort, { once: true });
-			child.on("close", () => signal.removeEventListener("abort", onAbort));
 		}
 
+		timeout = setTimeout(() => {
+			timedOut = true;
+			killChild();
+		}, timeoutSec * 1000);
+
 		child.on("error", (err) => {
-			resolve({
-				content: [{ type: "text", text: `[pi exec error: ${err.message}]` }],
-				details: { exitCode: 1 },
-			});
+			finalize(1, `[pi exec error: ${err.message}]`);
 		});
 
 		child.on("close", (code) => {
 			const exitCode = code ?? 1;
-			const out = stdout.trim();
-			const err = stderr.trim();
-
-			let text: string;
-			if (exitCode !== 0) {
-				text = `[pi subagent exit ${exitCode}]${err ? "\n" + err : ""}${out ? "\n" + out : ""}`;
-			} else {
-				text = out || `[pi subagent exit 0, no output]`;
+			if (timedOut) {
+				finalize(exitCode, `[pi subagent timeout after ${timeoutSec}s; model=${model}; thinking=${thinking}]`);
+				return;
 			}
-
-			resolve({
-				content: [{ type: "text", text }],
-				details: { exitCode },
-			});
+			if (aborted) {
+				finalize(exitCode, `[pi subagent aborted by parent; model=${model}; thinking=${thinking}]`);
+				return;
+			}
+			finalize(exitCode);
 		});
 	});
 }
@@ -270,11 +328,17 @@ export default function iweClaudeNative(pi: ExtensionAPI): void {
 		promptSnippet: `${taskName}(prompt, cwd?) — headless Pi subagent`,
 		promptGuidelines: [
 			`Use ${taskName} for work that requires a fresh context (context isolation).`,
+			`Default model: ${DEFAULT_TASK_MODEL}; default thinking: ${DEFAULT_TASK_THINKING}; default timeout: ${DEFAULT_TASK_TIMEOUT_SEC}s.`,
+			"For formal checklist verification, keep prompts explicit and prefer shell-readable checks.",
 			"The subagent runs with all extensions loaded (hooks bridge active).",
 		],
 		parameters: TaskParams,
 		execute: async (_id, params, signal, _onUpdate, ctx) => {
-			return runPiHeadless(params.prompt, params.cwd ?? ctx.cwd, signal ?? undefined);
+			return runPiHeadless(params.prompt, params.cwd ?? ctx.cwd, signal ?? undefined, {
+				model: params.model,
+				thinking: params.thinking,
+				timeoutSec: params.timeoutSec,
+			});
 		},
 	});
 
