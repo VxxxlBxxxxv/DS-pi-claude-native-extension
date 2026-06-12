@@ -17,31 +17,16 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
 // ============================================================
-// Ф2 — Command aliases (10)
+// Ф2 — Command aliases (dynamic, WP-81)
 // ============================================================
 
 /**
- * IWE skills exposed as direct Pi commands (no /skill: prefix).
- *
- * Selection rule: skills used in daily flow (Day Open/Close, verify, archgate,
- * ke, wp-new, run-protocol, week/month-close, think). Rare skills stay /skill:<name>.
+ * Every discovered Pi skill command (source === "skill") gets a direct alias
+ * (/day-open → /skill:day-open). Enumerated at session_start via pi.getCommands(),
+ * so new skills are covered without maintaining a manual list. Aliases that would
+ * collide with an existing command name are skipped.
  */
-const IWE_SKILL_ALIASES = [
-	"day-open",
-	"day-close",
-	"week-close",
-	"month-close",
-	"run-protocol",
-	"verify",
-	"archgate",
-	"ke",
-	"wp-new",
-	"think",
-] as const;
-
-type SkillAlias = (typeof IWE_SKILL_ALIASES)[number];
-
-function makeSkillForwarder(pi: ExtensionAPI, alias: SkillAlias) {
+function makeSkillForwarder(pi: ExtensionAPI, alias: string) {
 	return async (args: string) => {
 		const trimmed = args?.trim();
 		const cmd = trimmed ? `/skill:${alias} ${trimmed}` : `/skill:${alias}`;
@@ -92,9 +77,20 @@ function expandSkillCommand(pi: ExtensionAPI, text: string): string | null {
 
 const SkillParams = Type.Object({
 	name: Type.String({
-		description: "Skill name (day-open, day-close, verify, ke, archgate, wp-new, think, run-protocol, week-close, month-close)",
+		description: "IWE skill name (e.g. day-open, day-close, verify, ke, archgate, wp-new, think, run-protocol, week-close, month-close — any skill discovered from the configured skill directories)",
 	}),
 	args: Type.Optional(Type.String({ description: "Optional arguments passed after the skill name" })),
+});
+
+const AskUserQuestionParams = Type.Object({
+	question: Type.String({ description: "The complete question to ask the user, ending with a question mark" }),
+	options: Type.Array(
+		Type.Object({
+			label: Type.String({ description: "Concise display text for this choice (1-5 words)" }),
+			description: Type.Optional(Type.String({ description: "What this option means or implies" })),
+		}),
+		{ description: "2-4 distinct, mutually exclusive choices. An 'Other' free-text option is added automatically." },
+	),
 });
 
 const DEFAULT_TASK_MODEL = "openai-codex/gpt-5.4-mini";
@@ -278,12 +274,18 @@ export default function iweClaudeNative(pi: ExtensionAPI): void {
 	pi.on("session_start", (event, _ctx) => {
 		if (event.reason !== "startup" && event.reason !== "reload") return;
 
-	// --- Ф2: command aliases ---
-	for (const alias of IWE_SKILL_ALIASES) {
+	// --- Ф2: command aliases (dynamic enumeration, WP-81) ---
+	const commands = pi.getCommands();
+	const takenCommandNames = new Set(commands.map((c) => c.name));
+	for (const cmd of commands) {
+		if (cmd.source !== "skill") continue;
+		const alias = cmd.name.replace(/^skill:/, "");
+		if (alias === cmd.name || takenCommandNames.has(alias)) continue;
 		pi.registerCommand(alias, {
 			description: `IWE Claude-native alias for /skill:${alias}`,
 			handler: makeSkillForwarder(pi, alias),
 		});
+		takenCommandNames.add(alias);
 	}
 
 	// --- Ф3-Ф4: collision detection (safe here: runtime is initialized) ---
@@ -291,6 +293,7 @@ export default function iweClaudeNative(pi: ExtensionAPI): void {
 	const skillName = existingNames.has("Skill") ? "iwe_skill" : "Skill";
 	const taskName = existingNames.has("Task") ? "iwe_task" : "Task";
 	const todoWriteName = existingNames.has("TodoWrite") ? "iwe_todo_write" : "TodoWrite";
+	const askUserName = existingNames.has("AskUserQuestion") ? "iwe_ask_user_question" : "AskUserQuestion";
 
 	// --- Ф3: Skill tool ---
 	pi.registerTool({
@@ -327,7 +330,8 @@ export default function iweClaudeNative(pi: ExtensionAPI): void {
 			"Use for isolated analysis, note-review, or background tasks that should not affect the current session.",
 		promptSnippet: `${taskName}(prompt, cwd?) — headless Pi subagent`,
 		promptGuidelines: [
-			`Use ${taskName} for work that requires a fresh context (context isolation).`,
+			`Use ${taskName} only for quick isolated checks that fit the ${DEFAULT_TASK_TIMEOUT_SEC}s timeout.`,
+			"For heavy, parallel, scheduled, or long-running subagent work prefer the Agent tool (pi-subagents) when available — it supports custom agent types (verifier, auditor, Explore), background runs, and steering.",
 			`Default model: ${DEFAULT_TASK_MODEL}; default thinking: ${DEFAULT_TASK_THINKING}; default timeout: ${DEFAULT_TASK_TIMEOUT_SEC}s.`,
 			"For formal checklist verification, keep prompts explicit and prefer shell-readable checks.",
 			"The subagent runs with all extensions loaded (hooks bridge active).",
@@ -371,6 +375,53 @@ export default function iweClaudeNative(pi: ExtensionAPI): void {
 			return {
 				content: [{ type: "text", text: summary }],
 				details: { total: params.todos.length, done, active, pending },
+			};
+		},
+	});
+
+	// --- WP-81: AskUserQuestion tool (ctx.ui dialogs) ---
+	pi.registerTool({
+		name: askUserName,
+		label: "IWE AskUserQuestion",
+		description:
+			"Ask the user to choose between 2-4 concrete options when a decision is genuinely theirs to make " +
+			"(choice-question). Shows a select dialog; the user can always pick 'Другое' and type a custom answer.",
+		promptSnippet: `${askUserName}(question, options[]) — structured user choice`,
+		promptGuidelines: [
+			`Use ${askUserName} only for real alternatives (X or Y), never for yes/no confirmation of a ready decision.`,
+			"Options must be distinct and mutually exclusive; put the recommended option first with '(рекомендую)'.",
+			"Requires interactive TUI; in headless mode the tool reports unavailability — proceed with the recommended option instead.",
+		],
+		parameters: AskUserQuestionParams,
+		execute: async (_id, params, _signal, _onUpdate, ctx) => {
+			if (!ctx.hasUI) {
+				return {
+					content: [{ type: "text", text: "[no interactive UI — cannot ask the user; proceed with the recommended option and state the assumption]" }],
+					details: { answered: false },
+				};
+			}
+			const OTHER = "Другое (свой вариант)";
+			const labels = params.options.map((o) =>
+				o.description ? `${o.label} — ${o.description}` : o.label,
+			);
+			const choice = await ctx.ui.select(params.question, [...labels, OTHER]);
+			if (choice === undefined) {
+				return {
+					content: [{ type: "text", text: "[user dismissed the question without answering]" }],
+					details: { answered: false },
+				};
+			}
+			if (choice === OTHER) {
+				const custom = await ctx.ui.input(params.question, "свой вариант ответа");
+				return {
+					content: [{ type: "text", text: custom?.trim() ? `User answered: ${custom.trim()}` : "[user dismissed the custom-answer input]" }],
+					details: { answered: Boolean(custom?.trim()), custom: true },
+				};
+			}
+			const picked = params.options[labels.indexOf(choice)];
+			return {
+				content: [{ type: "text", text: `User selected: ${picked?.label ?? choice}` }],
+				details: { answered: true, custom: false },
 			};
 		},
 	});

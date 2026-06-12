@@ -2,17 +2,15 @@
 
 Pi-extension providing Claude-native parity for the IWE (Intellectual Work Environment) running on Pi (`@earendil-works/pi-coding-agent`).
 
-> **Status:** Ф2-Ф4 done (23.05.2026). Command aliases + `Skill` / `Task` / `TodoWrite` tools active. Ф5 complete (GitHub remote + DS-strategy sync). Regression fixes: central `/skill:*` expansion guard (31.05.2026); `Task` default fast verifier model + timeout diagnostics (02.06.2026).
+> **Status:** Ф2-Ф4 done (23.05.2026). Command aliases + `Skill` / `Task` / `TodoWrite` tools active. Ф5 complete (GitHub remote + DS-strategy sync). Regression fixes: central `/skill:*` expansion guard (31.05.2026); `Task` default fast verifier model + timeout diagnostics (02.06.2026). WP-81 (12.06.2026): dynamic aliases for ALL skills, `AskUserQuestion` tool, agents catalog for pi-subagents (WP-80).
 
 ## What it does
 
-Pilots used to Claude Code expect `/day-open`, `/verify`, `/archgate` etc. without prefix. In Pi the native command form is `/skill:day-open`. This extension registers 10 IWE skill aliases as direct Pi commands, and provides `Skill`, `Task`, `TodoWrite` as model-callable tools.
+Pilots used to Claude Code expect `/day-open`, `/verify`, `/archgate` etc. without prefix. In Pi the native command form is `/skill:day-open`. This extension registers a direct alias for EVERY discovered skill command, and provides `Skill`, `Task`, `TodoWrite`, `AskUserQuestion` as model-callable tools.
 
-**Aliases registered (10):**
+**Aliases (dynamic, WP-81):**
 
-`day-open`, `day-close`, `week-close`, `month-close`, `run-protocol`, `verify`, `archgate`, `ke`, `wp-new`, `think`.
-
-(Other IWE skills remain accessible via `/skill:<name>` — less frequent in daily flow.)
+At `session_start` the extension enumerates `pi.getCommands()` and registers `/<name>` for every command with `source === "skill"`, skipping name collisions with existing commands. No manual alias list to maintain — new skills (and skills fixed by WP-79) get aliases automatically. Smoke 12.06.2026: 40 skills discovered → 40 aliases registered.
 
 **Custom tools (Ф3-Ф4):**
 
@@ -21,6 +19,31 @@ Pilots used to Claude Code expect `/day-open`, `/verify`, `/archgate` etc. witho
 | `Skill(name, args?)` | Invokes an IWE skill as a follow-up user message |
 | `Task(prompt, cwd?, model?, thinking?, timeoutSec?)` | Runs a headless Pi subagent (`pi --print --no-session`) for isolated work; defaults to `openai-codex/gpt-5.4-mini`, `minimal`, `55s` |
 | `TodoWrite(todos[])` | Updates task list widget above editor + persists via appendEntry |
+| `AskUserQuestion(question, options[])` | Structured choice dialog via `ctx.ui.select` (+ free-text «Другое»); degrades gracefully in headless mode (WP-81) |
+
+**Task vs Agent (WP-80/81 decision):** `Task` stays a quick headless check (≤55s default). For heavy, parallel, scheduled, or steerable subagent work the model is steered to the `Agent` tool from `@gotgenes/pi-subagents` (already in `settings.json → packages`). `Task` was NOT rewrapped over the subagents RPC bus: `Agent` is registered in the session directly, a wrapper would only duplicate it with extra failure modes.
+
+## Agents catalog (WP-80)
+
+IWE roles as pi-subagents custom agent types. Source-of-truth: [`agents/`](agents/) in this repo, installed via symlink:
+
+```bash
+ln -sfn ~/IWE/DS-pi-claude-native-extension/agents ~/.pi/agent/agents
+```
+
+| Agent | Role | Model | Tools |
+|-------|------|-------|-------|
+| `verifier` | R23 — formal checklist verification, context isolation | `gpt-5.4-mini` (fuzzy-matched; swap = edit one frontmatter line) | read-only |
+| `auditor` | VR.R.002 — independent artifact-vs-Pack audit | inherit (parent model) | read-only |
+| `Explore` (built-in) | fast read-only codebase exploration | haiku-tier w/ fallback | read-only |
+
+Model independence: the model is declarative frontmatter with fuzzy matching against *available* models — switching provider (Codex → Anthropic → Kimi) means editing one line, not extension code.
+
+Scheduling (ScheduleWakeup analog) is enabled: `~/.pi/agent/subagents.json → "schedulingEnabled": true`. Pass `schedule` (cron / interval / one-shot) to the `Agent` tool.
+
+## Project trust (Pi ≥0.79)
+
+Pi 0.79 gates project-local resources behind a trust decision; headless `pi --print` silently skips them without a saved decision. `~/.pi/agent/trust.json` contains `"/home/natty/IWE": true`, which covers all child repos (closest parent-path decision wins) — so `Task`/`Agent` headless children keep their resources. No `project_trust` handler needed. If you relocate the workspace, re-trust the new root once in the TUI.
 
 Tool names fall back to `iwe_skill` / `iwe_task` / `iwe_todo_write` if Pi ships native tools with the same names (collision detection via `getAllTools()` at startup).
 

@@ -7,7 +7,9 @@
 
 L2-расширение Pi-runtime для IWE: даёт Claude-native UX в Pi-TUI без модификации `.claude/` или FMT.
 
-**Что покрывает (Ф2):** command aliases (`/day-open` → `/skill:day-open`) — пилот вводит привычную для Claude Code команду, extension перенаправляет в Pi skill engine.
+**Что покрывает (Ф2, с WP-81 — динамически):** command aliases (`/day-open` → `/skill:day-open`) для ВСЕХ обнаруженных навыков — перечисление через `pi.getCommands()` на session_start, коллизии имён пропускаются.
+
+**Что покрывает (WP-80):** каталог агентов pi-subagents (`agents/*.md` — verifier R23, auditor VR.R.002), симлинк в `~/.pi/agent/agents`; расписания включены (`subagents.json`).
 
 **Что покрывает (Ф3-Ф5, carry W22):** custom tools `Skill` / `Task` / `TodoWrite` через `pi.registerTool({...})` + `pi.sendUserMessage` / `pi -p` headless / `pi.appendEntry` + `ctx.ui.setWidget`.
 
@@ -34,7 +36,7 @@ L2-расширение Pi-runtime для IWE: даёт Claude-native UX в Pi-T
 
 1. **Не дублировать bridge scope.** Этот extension = command aliases + tools. Hooks = bridge. Если кажется, что что-то на стыке — открыть отдельный РП и обсудить.
 2. **Не модифицировать `.claude/` или FMT.** Адаптер живёт здесь. Если IWE требует изменений — это bug IWE или promotion в шаблон.
-3. **IWE_SKILLS список — source-of-truth `.claude/skills/`.** При добавлении нового skill в IWE — добавить в массив здесь, иначе `/new-skill` не сработает (только `/skill:new-skill`).
+3. ~~IWE_SKILLS список~~ — устарело (WP-81): алиасы перечисляются динамически из `pi.getCommands()`, ручного списка нет. Новый skill получает алиас автоматически после перезапуска Pi.
 4. **Regression smoke #8:** если Pi-нативный `Skill` / `Task` / `TodoWrite` появится upstream — extension должен падать с понятной ошибкой. Fallback к `iwe_skill` / `iwe_task` / `iwe_todo_write`.
 5. **Pull-on-Touch** при первом обращении к репо за сессию.
 
