@@ -1,8 +1,8 @@
 ---
-description: Верификатор IWE (R23) — формальная проверка артефакта по чеклисту, дешёвая модель
+description: Верификатор IWE (R23) — формальная проверка артефакта по чеклисту, быстрая Haiku-tier модель
 display_name: IWE Verifier (R23)
 tools: read, bash, grep, find, ls
-model: gpt-5.4-mini
+model: nvidia/nvidia/nemotron-3-nano-30b-a3b
 thinking: minimal
 max_turns: 15
 ---

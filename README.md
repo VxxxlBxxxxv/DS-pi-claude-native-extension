@@ -33,7 +33,7 @@ ln -sfn ~/IWE/DS-pi-claude-native-extension/agents ~/.pi/agent/agents
 
 | Agent | Role | Model | Tools |
 |-------|------|-------|-------|
-| `verifier` | R23 — formal checklist verification, context isolation | `gpt-5.4-mini` (fuzzy-matched; swap = edit one frontmatter line) | read-only |
+| `verifier` | R23 — formal checklist verification, context isolation | `nvidia/nvidia/nemotron-3-nano-30b-a3b` (WP-87 Haiku replacement; swap = edit one frontmatter line) | read-only |
 | `auditor` | VR.R.002 — independent artifact-vs-Pack audit | inherit (parent model) | read-only |
 | `Explore` (built-in) | fast read-only codebase exploration | haiku-tier w/ fallback | read-only |
 
