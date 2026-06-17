@@ -2,7 +2,7 @@
 description: Верификатор IWE (R23) — формальная проверка артефакта по чеклисту, быстрая Haiku-tier модель
 display_name: IWE Verifier (R23)
 tools: read, bash, grep, find, ls
-model: nvidia/nvidia/nemotron-3-nano-30b-a3b
+model: openai-codex/gpt-5.3-codex-spark
 thinking: minimal
 max_turns: 15
 ---
