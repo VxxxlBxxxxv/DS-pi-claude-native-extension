@@ -2,7 +2,7 @@
 
 Pi-extension providing Claude-native parity for the IWE (Intellectual Work Environment) running on Pi (`@earendil-works/pi-coding-agent`).
 
-> **Status:** Ф2-Ф4 done (23.05.2026). Command aliases + `Skill` / `Task` / `TodoWrite` tools active. Ф5 complete (GitHub remote + DS-strategy sync). Regression fixes: central `/skill:*` expansion guard (31.05.2026); `Task` default fast verifier model + timeout diagnostics (02.06.2026). WP-81 (12.06.2026): dynamic aliases for ALL skills, `AskUserQuestion` tool, agents catalog for pi-subagents (WP-80).
+> **Status:** Ф2-Ф4 done (23.05.2026). Command aliases + `Skill` / `Task` / `TodoWrite` tools active. Ф5 complete (GitHub remote + DS-strategy sync). Regression fixes: central `/skill:*` expansion guard (31.05.2026); `Task` timeout diagnostics (02.06.2026); `Task` default aligned with current Pi default model (30.06.2026). WP-81 (12.06.2026): dynamic aliases for ALL skills, `AskUserQuestion` tool, agents catalog for pi-subagents (WP-80).
 
 ## What it does
 
@@ -17,7 +17,7 @@ At `session_start` the extension enumerates `pi.getCommands()` and registers `/<
 | Tool | What it does |
 |------|-------------|
 | `Skill(name, args?)` | Invokes an IWE skill as a follow-up user message |
-| `Task(prompt, cwd?, model?, thinking?, timeoutSec?)` | Runs a headless Pi subagent (`pi --print --no-session`) for isolated work; defaults to `openai-codex/gpt-5.4-mini`, `minimal`, `55s` |
+| `Task(prompt, cwd?, model?, thinking?, timeoutSec?)` | Runs a headless Pi subagent (`pi --print --no-session`) for isolated work; defaults to `openai-codex/gpt-5.5`, `minimal`, `55s` |
 | `TodoWrite(todos[])` | Updates task list widget above editor + persists via appendEntry |
 | `AskUserQuestion(question, options[])` | Structured choice dialog via `ctx.ui.select` (+ free-text «Другое»); degrades gracefully in headless mode (WP-81) |
 
@@ -47,7 +47,7 @@ Pi 0.79 gates project-local resources behind a trust decision; headless `pi --pr
 
 Tool names fall back to `iwe_skill` / `iwe_task` / `iwe_todo_write` if Pi ships native tools with the same names (collision detection via `getAllTools()` at startup).
 
-**Task default:** `Task` uses `openai-codex/gpt-5.4-mini` + `minimal` by default, with a 55-second internal timeout. This keeps formal checklist verification from hanging on the global heavy default (`gpt-5.5` + `xhigh`). Callers can override `model`, `thinking`, and `timeoutSec`.
+**Task default:** `Task` uses `openai-codex/gpt-5.5` + `minimal` by default, with a 55-second internal timeout. This matches the current global Pi default model while keeping a lighter thinking level than the global `xhigh`. Callers can override `model`, `thinking`, and `timeoutSec`.
 
 **Skill expansion guard:** Pi-native `/skill:<name>` commands are normally expanded before the model sees them. Extension-injected messages sent via `pi.sendUserMessage()` intentionally skip that expansion, so this extension centrally normalizes any `/skill:*` input by resolving the registered skill command dynamically (`pi.getCommands()`), reading its `SKILL.md`, and replacing the prompt with the expanded `<skill ...>` block. This covers current and future skills without maintaining a manual skill list.
 
@@ -109,9 +109,9 @@ pi
 /skill:verify test
 # Expected: model receives verify SKILL.md instructions; no repeated "Queued: /skill:verify test"
 
-# Task smoke: headless subagent uses fast verifier default
+# Task smoke: headless subagent uses current Pi default model
 # Ask the model to call: Task({prompt: "Reply exactly CHILD_OK and do not use tools"})
-# Expected: CHILD_OK; details.model = openai-codex/gpt-5.4-mini; no opaque [pi subagent exit 1]
+# Expected: CHILD_OK; details.model = openai-codex/gpt-5.5; no opaque [pi subagent exit 1]
 ```
 
 If smoke fails — check `pi --version` (requires ~0.74+) and `~/.pi/agent/settings.json.skills` is populated.

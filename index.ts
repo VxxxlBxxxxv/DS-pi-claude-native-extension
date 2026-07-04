@@ -93,7 +93,7 @@ const AskUserQuestionParams = Type.Object({
 	),
 });
 
-const DEFAULT_TASK_MODEL = "openai-codex/gpt-5.4-mini";
+const DEFAULT_TASK_MODEL = "openai-codex/gpt-5.5";
 const DEFAULT_TASK_THINKING = "minimal";
 const DEFAULT_TASK_TIMEOUT_SEC = 55;
 
